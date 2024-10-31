@@ -151,31 +151,20 @@ class BleController extends GetxController {
     }
     // A나 다른 중간 패킷이면 누적
     else if (packet.contains('A')) {
-      _completeLog.write(packet);
+      if (!_completeLog.isEmpty) {  // V 패킷이 있을 때만 추가
+        _completeLog.write(packet);
+      }
     }
     // !로 끝나는 마지막 패킷이면 완성하고 출력
     else if (packet.contains('!')) {
-      _completeLog.write(packet);
-      String completeData = _completeLog.toString();
-      String formattedLog = "$timeStamp : $completeData";
-      print("통문자 : $completeData");
-      receivedDataList.insert(0, formattedLog);
-
-      // 온도와 BPM 데이터 처리 (필요한 경우)
-      try {
-        List<String> parts = completeData.split('|');
-        if (parts.isNotEmpty && completeData.contains('V')) {
-          String tempStr = parts[0].trim();
-          temperatureData.value = tempStr;
-
-          String bpmStr = parts[1].split('V')[0].trim();
-          bpmData.value = bpmStr;
-        }
-      } catch (e) {
-        print("Error parsing data: $e");
+      if (!_completeLog.isEmpty) {  // 이전 패킷들이 있을 때만 처리
+        _completeLog.write(packet);
+        String completeData = _completeLog.toString();
+        String formattedLog = "$timeStamp : $completeData";
+        print("통문자 : $completeData");
+        receivedDataList.insert(0, formattedLog);
+        _completeLog.clear();  // 버퍼 초기화
       }
-
-      _completeLog.clear();  // 버퍼 초기화
     }
 
     if (receivedDataList.length > 100) {
