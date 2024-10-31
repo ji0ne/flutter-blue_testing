@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter_blue/flutter_blue.dart';
 import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -14,25 +13,25 @@ class BleController extends GetxController {
   StreamSubscription<List<int>>? _characteristicSubscription;
 
   RxList<String> receivedDataList = <String>[].obs;
-
   BluetoothCharacteristic? writeCharacteristic;
 
-  //이 클래스 안에서만 사용되는 private 변수
-  String completeData = "";
+  StringBuffer _dataBuffer = StringBuffer();
+  RxString bpmData = "74".obs;  // 초기값 설정
+  RxString temperatureData = "36.5".obs;
 
   //다른 클래스에서 사용할 수신한 전체데이터 변수
-  String get s_completeData=> completeData;
+  //String get s_completeData=> completeData;
+  StringBuffer _completeLog = StringBuffer();
+  String get s_bpm => bpmData.value;
+  String get s_temperature => temperatureData.value;
 
-  var isScanning = false.obs;
-  
 
   @override
-  void dispose() {
-    connectedDevice?.disconnect();
-    _deviceStateSubscription?.cancel();
-    _characteristicSubscription?.cancel();
-    super.dispose();
+  void onInit() {
+    super.onInit();
+    _dataBuffer = StringBuffer();
   }
+
 
   Future<void> scanDevices() async {
     if (await Permission.bluetoothScan.isGranted &&
@@ -79,53 +78,112 @@ class BleController extends GetxController {
   void _subscribeToCharacteristic(BluetoothCharacteristic characteristic) {
     characteristic.setNotifyValue(true);
     _characteristicSubscription = characteristic.value.listen((value) {
-      String data = utf8.decode(value);
+      String receivedData = utf8.decode(value);
+      _processReceivedData(receivedData);
 
-      //누적
-      if(data.contains('!'))
-      {
-        completeData += data;
-        print("Complete Data Received! : $completeData");
-        completeData = "";
-      }else {
-        completeData += data;
-      }
+      // if(data.contains('!')) {
+      //   completeData += data;
+      //   receivedDataList.add("${DateTime.now().toString().substring(11, 19)} : $completeData");
+      //   completeData = "";
+      // } else {
+      //   completeData += data;
+      // }
 
-
-      //print("Received data: $data");
-      receivedDataList.add(data);
-      if (receivedDataList.length > 100) {
-        receivedDataList.removeAt(0);
-      }
+      // 리스트 크기 관리
+      // if (receivedDataList.length > 100) {
+      //   receivedDataList.removeRange(0, 20); // 한 번에 20개씩 제거
+      // }
     });
   }
+  //String s_completeLog ="";
+  // void _processReceivedData(String packet) {
+  //
+  //   String timeStamp = DateTime.now().toString().substring(11, 19);
+  //
+  //   _completeLog.write(packet);
+  //
+  //   if (packet.contains('!')) {
+  //     String completeData = _completeLog.toString();
+  //     String formattedLog = "$timeStamp : $completeData";
+  //     print("통문자 : ${completeData}");
+  //     receivedDataList.insert(0, formattedLog);
+  //     _completeLog.clear();
+  //   }
+  //
+  //   // 로그 크기 관리
+  //   if (receivedDataList.length > 100) {
+  //     receivedDataList.removeRange(80, receivedDataList.length);
+  //   }
+  //
+  //
+  // }
+  //
+  // void _processReceivedData(String packet) {
+  //   String timeStamp = DateTime.now().toString().substring(11, 19);
+  //
+  //   // V를 포함한 첫 번째 패킷이나 이전 누적 데이터가 없는 경우에만 새로 시작
+  //   if ((packet.contains('V') && _completeLog.isEmpty) || _completeLog.isEmpty) {
+  //     _completeLog.write(packet);
+  //   }
+  //   // V를 포함하지 않고 !를 포함한 마지막 패킷인 경우
+  //   else if (!packet.contains('V') && packet.contains('!')) {
+  //     _completeLog.write(packet);
+  //     String completeData = _completeLog.toString();
+  //     String formattedLog = "$timeStamp : $completeData";
+  //     print("통문자 : $completeData");
+  //     receivedDataList.insert(0, formattedLog);
+  //     _completeLog.clear();  // 버퍼 초기화
+  //   }
+  //
+  //   // 로그 크기 관리
+  //   if (receivedDataList.length > 100) {
+  //     receivedDataList.removeRange(80, receivedDataList.length);
+  //   }
+  // }
 
-  Future<void> sendData(int number) async {
-    if (number != 1) {
-      print("Invalid number: Only 1 is supported");
-      return;
+  void _processReceivedData(String packet) {
+    String timeStamp = DateTime.now().toString().substring(11, 19);
+
+    // V를 포함한 첫 번째 패킷이면 새로 시작
+    if (packet.contains('V')) {
+      _completeLog.clear();  // 새로운 데이터 시작
+      _completeLog.write(packet);
+    }
+    // A나 다른 중간 패킷이면 누적
+    else if (packet.contains('A')) {
+      _completeLog.write(packet);
+    }
+    // !로 끝나는 마지막 패킷이면 완성하고 출력
+    else if (packet.contains('!')) {
+      _completeLog.write(packet);
+      String completeData = _completeLog.toString();
+      String formattedLog = "$timeStamp : $completeData";
+      print("통문자 : $completeData");
+      receivedDataList.insert(0, formattedLog);
+
+      // 온도와 BPM 데이터 처리 (필요한 경우)
+      try {
+        List<String> parts = completeData.split('|');
+        if (parts.isNotEmpty && completeData.contains('V')) {
+          String tempStr = parts[0].trim();
+          temperatureData.value = tempStr;
+
+          String bpmStr = parts[1].split('V')[0].trim();
+          bpmData.value = bpmStr;
+        }
+      } catch (e) {
+        print("Error parsing data: $e");
+      }
+
+      _completeLog.clear();  // 버퍼 초기화
     }
 
-    if (connectedDevice == null) {
-      print("No device connected");
-      return;
-    }
-
-    if (writeCharacteristic == null) {
-      print("Write characteristic not found");
-      return;
-    }
-
-    try {
-      // 0x01을 1바이트로 전송
-      List<int> byteArray = [0x01];  // 16진수 0x01 사용
-
-      await writeCharacteristic!.write(byteArray, withoutResponse: true);
-      print('Data sent: 0x01');
-    } catch (e) {
-      print("Error sending data: $e");
+    if (receivedDataList.length > 100) {
+      receivedDataList.removeRange(80, receivedDataList.length);
     }
   }
+
+
 
   Stream<List<ScanResult>> get scanResults => ble.scanResults;
 
@@ -133,5 +191,13 @@ class BleController extends GetxController {
   void onClose() {
     _deviceStateSubscription?.cancel();
     super.onClose();
+  }
+
+  @override
+  void dispose() {
+    connectedDevice?.disconnect();
+    _deviceStateSubscription?.cancel();
+    _characteristicSubscription?.cancel();
+    super.dispose();
   }
 }
