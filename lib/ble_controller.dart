@@ -47,11 +47,22 @@ class BleController extends GetxController {
     }
   }
 
+  RxString connectedDeviceId = "".obs;
+
   Future<void> connectToDevice(BluetoothDevice device) async {
     try {
       await device.connect(timeout: Duration(seconds: 15));
       connectedDevice = device;
+      connectedDeviceId.value = device.id.id;
       print("기기 연결됨 : $connectedDevice");
+
+      // 연결 상태 모니터링
+      _deviceStateSubscription = device.state.listen((state) {
+        if (state == BluetoothDeviceState.disconnected) {
+          connectedDeviceId.value = "";  // 연결 해제 시 ID 초기화
+          print("기기 연결 해제됨");
+        }
+      });
 
       services = await device.discoverServices();
 
@@ -71,6 +82,7 @@ class BleController extends GetxController {
         }
       }
     } catch (e) {
+      connectedDeviceId.value ="";
       print("에러 발생: $e");
     }
   }
@@ -184,6 +196,7 @@ class BleController extends GetxController {
 
   @override
   void dispose() {
+    connectedDeviceId.value = "";
     connectedDevice?.disconnect();
     _deviceStateSubscription?.cancel();
     _characteristicSubscription?.cancel();

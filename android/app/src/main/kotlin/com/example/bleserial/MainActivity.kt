@@ -1,4 +1,4 @@
-package com.example.firstnote
+package com.example.bleserial
 
 import io.flutter.embedding.android.FlutterActivity
 
